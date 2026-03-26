@@ -25,7 +25,32 @@ struct MarkdownTextView: NSViewRepresentable {
     func updateNSView(_ webView: DropEnabledWebView, context: Context) {
         context.coordinator.isDropTargeted = $isDropTargeted
         context.coordinator.onDropFile = onDropFile
-        webView.loadHTMLString(html, baseURL: baseURL)
+
+        let previousHTML = context.coordinator.lastLoadedHTML
+        let previousBaseURL = context.coordinator.lastLoadedBaseURL
+
+        guard html != previousHTML || baseURL != previousBaseURL else { return }
+
+        context.coordinator.lastLoadedHTML = html
+        context.coordinator.lastLoadedBaseURL = baseURL
+
+        if previousBaseURL == baseURL && previousHTML != nil {
+            // Same base URL — swap body content and preserve scroll position
+            let escaped = html
+                .replacingOccurrences(of: "\\", with: "\\\\")
+                .replacingOccurrences(of: "`", with: "\\`")
+                .replacingOccurrences(of: "$", with: "\\$")
+            webView.evaluateJavaScript("""
+                (function() {
+                    var scrollY = window.scrollY;
+                    document.documentElement.innerHTML = `\(escaped)`;
+                    window.scrollTo(0, scrollY);
+                })();
+                """)
+        } else {
+            // Different base URL or first load — full reload required
+            webView.loadHTMLString(html, baseURL: baseURL)
+        }
     }
 
     func makeCoordinator() -> Coordinator {
@@ -37,6 +62,8 @@ extension MarkdownTextView {
     final class Coordinator: NSObject, DropEnabledWebViewDelegate {
         var isDropTargeted: Binding<Bool>
         var onDropFile: (URL) -> Void
+        var lastLoadedHTML: String?
+        var lastLoadedBaseURL: URL?
 
         init(isDropTargeted: Binding<Bool>, onDropFile: @escaping (URL) -> Void) {
             self.isDropTargeted = isDropTargeted

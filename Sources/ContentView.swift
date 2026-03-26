@@ -5,6 +5,9 @@ struct ContentView: View {
     @EnvironmentObject private var documentController: DocumentController
     @EnvironmentObject private var sidebarModel: SidebarModel
     @State private var isDropTargeted = false
+    @State private var pathText: String = ""
+    @State private var pathError: Bool = false
+    @FocusState private var isPathFieldFocused: Bool
 
     var body: some View {
         HStack(spacing: 0) {
@@ -21,19 +24,26 @@ struct ContentView: View {
                 Divider()
 
                 viewerArea
+
+                if documentController.fileURL != nil && documentController.errorMessage == nil {
+                    Divider()
+                    statusBar
+                }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(WindowSizeTrackingView())
+        .onReceive(NotificationCenter.default.publisher(for: .focusPathBar)) { _ in
+            isPathFieldFocused = true
+            DispatchQueue.main.async {
+                NSApp.sendAction(#selector(NSText.selectAll(_:)), to: nil, from: nil)
+            }
+        }
     }
 
     private var toolbar: some View {
         HStack {
-            Button("Open Markdown") {
-                documentController.openDocument()
-            }
-
             Button {
                 withAnimation {
                     sidebarModel.isVisible.toggle()
@@ -43,15 +53,81 @@ struct ContentView: View {
             }
             .help("Toggle Sidebar")
 
-            Spacer()
+            Button {
+                documentController.openDocument()
+            } label: {
+                Image(systemName: "folder")
+            }
+            .help("Open Markdown")
 
-            Text(documentController.fileURL?.path ?? "No file selected")
-                .font(.system(size: 12))
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
-                .truncationMode(.middle)
+            HStack(spacing: 0) {
+                Image(systemName: "exclamationmark.circle.fill")
+                    .foregroundStyle(.red)
+                    .font(.system(size: 12))
+                    .frame(width: 18)
+                    .opacity(pathError ? 1 : 0)
+                    .help("File not found")
+
+                TextField("No file selected", text: $pathText)
+                    .font(.system(size: 12))
+                    .textFieldStyle(.roundedBorder)
+                    .focused($isPathFieldFocused)
+                    .onSubmit {
+                        submitPath()
+                    }
+                    .onChange(of: pathText) { _ in
+                        pathError = false
+                    }
+                    .onReceive(documentController.$fileURL) { url in
+                        pathText = url?.path ?? ""
+                        pathError = false
+                    }
+                    .onExitCommand {
+                        pathText = documentController.fileURL?.path ?? ""
+                        pathError = false
+                    }
+                    .onTapGesture {
+                        DispatchQueue.main.async {
+                            NSApp.sendAction(#selector(NSText.selectAll(_:)), to: nil, from: nil)
+                        }
+                    }
+            }
+
+            if documentController.fileURL != nil {
+                Button {
+                    documentController.openInEditor()
+                } label: {
+                    Image(systemName: "pencil")
+                }
+                .help("Open in Editor")
+            }
         }
         .padding(12)
+    }
+
+    private func submitPath() {
+        let trimmed = pathText.trimmingCharacters(in: .whitespaces)
+        guard !trimmed.isEmpty else { return }
+
+        let expanded = (trimmed as NSString).expandingTildeInPath
+        let resolved: String
+        if expanded.hasPrefix("/") {
+            resolved = expanded
+        } else if let base = documentController.fileURL?.deletingLastPathComponent().path {
+            resolved = (base as NSString).appendingPathComponent(expanded)
+        } else {
+            resolved = (NSHomeDirectory() as NSString).appendingPathComponent(expanded)
+        }
+
+        let url = URL(fileURLWithPath: resolved)
+
+        var isDir: ObjCBool = false
+        if FileManager.default.fileExists(atPath: url.path, isDirectory: &isDir), isDir.boolValue {
+            sidebarModel.setRootDirectory(url)
+            pathError = false
+        } else if !documentController.tryLoadDocument(from: url) {
+            pathError = true
+        }
     }
 
     private var viewerArea: some View {
@@ -82,6 +158,20 @@ struct ContentView: View {
         .onDrop(of: [UTType.fileURL], isTargeted: $isDropTargeted) { providers in
             documentController.handleDroppedItems(providers)
         }
+    }
+
+    private var statusBar: some View {
+        HStack {
+            Spacer()
+            if let date = documentController.lastModifiedDate {
+                Text("Modified: \(date.formatted(date: .abbreviated, time: .standard))")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 4)
+        .background(Color(nsColor: .windowBackgroundColor))
     }
 }
 

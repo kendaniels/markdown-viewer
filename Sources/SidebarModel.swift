@@ -38,6 +38,12 @@ final class SidebarModel: ObservableObject {
         stopWatching()
     }
 
+    /// Sets the sidebar root to a specific directory without requiring a document load.
+    func setRootDirectory(_ url: URL) {
+        sidebarRootURL = url
+        enumerateAsync(directory: url)
+    }
+
     func bind(to documentController: DocumentController) {
         cancellable = documentController.$contentBaseURL
             .sink { [weak self] baseURL in

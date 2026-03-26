@@ -404,12 +404,7 @@ private struct MarkdownParser {
         for (lineIndex, line) in paragraphLines.enumerated() {
             let trimmed = line.trimmingCharacters(in: .whitespaces)
             if lineIndex > 0 {
-                let previous = paragraphLines[lineIndex - 1]
-                if previous.hasSuffix("  ") || previous.hasSuffix("\\") {
-                    output += "<br>"
-                } else {
-                    output += " "
-                }
+                output += "<br>"
             }
             output += InlineRenderer.render(trimmed)
         }

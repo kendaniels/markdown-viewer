@@ -21,7 +21,11 @@ struct SidebarView: View {
         List(selection: Binding(
             get: { documentController.fileURL },
             set: { url in
-                if let url { documentController.loadDocument(from: url) }
+                guard let url else { return }
+                var isDir: ObjCBool = false
+                if FileManager.default.fileExists(atPath: url.path, isDirectory: &isDir), !isDir.boolValue {
+                    documentController.loadDocument(from: url)
+                }
             }
         )) {
             ForEach(sidebarModel.rootNodes) { node in
